@@ -1,0 +1,730 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Forest Loss Detection — Study Notes</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600;9..144,700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --paper: #EFF1EA;
+    --paper-raised: #F7F8F3;
+    --ink: #1F2A22;
+    --ink-soft: #4B5A4F;
+    --line: #D3D8CC;
+    --canopy: #2F5233;
+    --canopy-deep: #1E3823;
+    --soil: #8A5A34;
+    --water: #3A6EA5;
+    --alert: #A8412F;
+    --band-blue:#3A6EA5;
+    --band-green:#4C8A55;
+    --band-red:#A8412F;
+    --band-nir:#C77B2E;
+    --band-swir:#7A5C8A;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;}
+  body{
+    background:var(--paper);
+    background-image:
+      linear-gradient(var(--line) 1px, transparent 1px),
+      linear-gradient(90deg, var(--line) 1px, transparent 1px);
+    background-size: 36px 36px;
+    background-attachment:local;
+    color:var(--ink);
+    font-family:'IBM Plex Sans', sans-serif;
+    -webkit-font-smoothing:antialiased;
+  }
+  .app{
+    display:flex;
+    min-height:100vh;
+  }
+
+  /* ---------- Sidebar ---------- */
+  .sidebar{
+    width:280px;
+    flex-shrink:0;
+    background:var(--canopy-deep);
+    color:#EAF0E6;
+    padding:32px 22px;
+    position:sticky;
+    top:0;
+    height:100vh;
+    overflow-y:auto;
+  }
+  .brand{
+    margin-bottom:34px;
+  }
+  .brand .bands{
+    display:flex;
+    gap:3px;
+    margin-bottom:14px;
+    height:22px;
+  }
+  .brand .bands span{
+    flex:1;
+    border-radius:2px;
+    opacity:0.9;
+  }
+  .brand h1{
+    font-family:'Fraunces', serif;
+    font-size:1.5rem;
+    font-weight:600;
+    line-height:1.15;
+    margin:0 0 6px 0;
+    letter-spacing:-0.01em;
+  }
+  .brand p{
+    margin:0;
+    font-size:0.8rem;
+    color:#B7C9B9;
+    font-family:'IBM Plex Mono', monospace;
+    letter-spacing:0.02em;
+  }
+
+  .weeknav{
+    list-style:none;
+    margin:0;
+    padding:0;
+    position:relative;
+  }
+  .weeknav::before{
+    content:"";
+    position:absolute;
+    left:15px;
+    top:8px;
+    bottom:8px;
+    width:1px;
+    background:#3C5C40;
+  }
+  .weeknav li{
+    position:relative;
+    margin-bottom:2px;
+  }
+  .weeknav button{
+    all:unset;
+    display:flex;
+    align-items:baseline;
+    gap:12px;
+    width:100%;
+    padding:11px 10px 11px 6px;
+    cursor:pointer;
+    border-radius:6px;
+    font-family:'IBM Plex Sans', sans-serif;
+    color:#C9D8C8;
+    transition:background .15s ease, color .15s ease;
+  }
+  .weeknav button:hover{
+    background:#2A4A2F;
+    color:#fff;
+  }
+  .weeknav button.active{
+    background:#EAF0E6;
+    color:var(--canopy-deep);
+  }
+  .weeknav .dot{
+    width:19px;
+    height:19px;
+    border-radius:50%;
+    border:1.5px solid #5C7A5E;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    font-family:'IBM Plex Mono', monospace;
+    font-size:0.68rem;
+    flex-shrink:0;
+    background:var(--canopy-deep);
+    color:#B7C9B9;
+    z-index:1;
+  }
+  .weeknav button.active .dot{
+    background:var(--canopy);
+    border-color:var(--canopy);
+    color:#fff;
+  }
+  .weeknav .label{
+    display:flex;
+    flex-direction:column;
+    gap:1px;
+  }
+  .weeknav .label .wk{
+    font-family:'IBM Plex Mono', monospace;
+    font-size:0.66rem;
+    text-transform:uppercase;
+    letter-spacing:0.08em;
+    opacity:0.75;
+  }
+  .weeknav .label .ti{
+    font-size:0.86rem;
+    font-weight:500;
+  }
+
+  .sidebar-footer{
+    margin-top:30px;
+    padding-top:18px;
+    border-top:1px solid #33502F;
+    font-family:'IBM Plex Mono', monospace;
+    font-size:0.72rem;
+    color:#8FA890;
+    line-height:1.6;
+  }
+
+  /* ---------- Main content ---------- */
+  .main{
+    flex:1;
+    min-width:0;
+    padding:48px 56px 120px 56px;
+  }
+  .content{
+    max-width:760px;
+  }
+  .eyebrow{
+    font-family:'IBM Plex Mono', monospace;
+    font-size:0.78rem;
+    color:var(--soil);
+    text-transform:uppercase;
+    letter-spacing:0.09em;
+    margin-bottom:10px;
+    display:flex;
+    align-items:center;
+    gap:10px;
+  }
+  .eyebrow::after{
+    content:"";
+    flex:1;
+    height:1px;
+    background:var(--line);
+  }
+  h2.week-title{
+    font-family:'Fraunces', serif;
+    font-size:2.35rem;
+    font-weight:600;
+    line-height:1.08;
+    margin:0 0 8px 0;
+    color:var(--canopy-deep);
+    letter-spacing:-0.01em;
+  }
+  .week-sub{
+    font-size:1.02rem;
+    color:var(--ink-soft);
+    margin:0 0 36px 0;
+    max-width:60ch;
+  }
+
+  section.block{
+    margin-bottom:34px;
+  }
+  section.block h3{
+    font-family:'Fraunces', serif;
+    font-size:1.18rem;
+    font-weight:600;
+    margin:0 0 10px 0;
+    color:var(--canopy-deep);
+  }
+  section.block p{
+    margin:0 0 12px 0;
+    line-height:1.65;
+    font-size:0.97rem;
+  }
+  section.block p:last-child{margin-bottom:0;}
+  strong{color:var(--canopy-deep); font-weight:600;}
+
+  .formula{
+    background:var(--paper-raised);
+    border:1px solid var(--line);
+    border-left:3px solid var(--water);
+    border-radius:4px;
+    padding:14px 18px;
+    font-family:'IBM Plex Mono', monospace;
+    font-size:0.92rem;
+    margin:14px 0;
+    overflow-x:auto;
+    color:var(--canopy-deep);
+  }
+
+  .callout{
+    background:var(--paper-raised);
+    border:1px solid var(--line);
+    border-left:3px solid var(--soil);
+    border-radius:4px;
+    padding:14px 18px;
+    margin:14px 0;
+    font-size:0.92rem;
+    line-height:1.6;
+  }
+  .callout .tag{
+    font-family:'IBM Plex Mono', monospace;
+    font-size:0.68rem;
+    text-transform:uppercase;
+    letter-spacing:0.08em;
+    color:var(--soil);
+    display:block;
+    margin-bottom:6px;
+  }
+
+  table.matrix{
+    border-collapse:collapse;
+    width:100%;
+    margin:14px 0;
+    font-size:0.88rem;
+  }
+  table.matrix th, table.matrix td{
+    border:1px solid var(--line);
+    padding:10px 12px;
+    text-align:left;
+  }
+  table.matrix th{
+    background:var(--paper-raised);
+    font-family:'IBM Plex Mono', monospace;
+    font-size:0.72rem;
+    text-transform:uppercase;
+    letter-spacing:0.05em;
+    color:var(--ink-soft);
+  }
+  table.matrix td.hit{color:var(--canopy); font-weight:600;}
+  table.matrix td.miss{color:var(--alert); font-weight:600;}
+
+  ul.plain{
+    margin:0 0 12px 0;
+    padding-left:20px;
+    line-height:1.65;
+    font-size:0.97rem;
+  }
+  ul.plain li{margin-bottom:6px;}
+
+  .glossary{
+    display:grid;
+    grid-template-columns:1fr;
+    gap:10px;
+    margin-top:8px;
+  }
+  .glossary .term{
+    background:var(--paper-raised);
+    border:1px solid var(--line);
+    border-radius:4px;
+    padding:12px 16px;
+  }
+  .glossary .term .t{
+    font-family:'IBM Plex Mono', monospace;
+    font-weight:600;
+    font-size:0.85rem;
+    color:var(--canopy-deep);
+    display:block;
+    margin-bottom:3px;
+  }
+  .glossary .term .d{
+    font-size:0.88rem;
+    color:var(--ink-soft);
+    line-height:1.55;
+  }
+
+  .checkq{
+    margin-top:40px;
+    padding-top:20px;
+    border-top:1px dashed var(--line);
+    font-size:0.88rem;
+    color:var(--ink-soft);
+    font-style:italic;
+  }
+
+  .nav-arrows{
+    display:flex;
+    justify-content:space-between;
+    margin-top:48px;
+    padding-top:20px;
+    border-top:1px solid var(--line);
+  }
+  .nav-arrows button{
+    all:unset;
+    cursor:pointer;
+    font-family:'IBM Plex Mono', monospace;
+    font-size:0.8rem;
+    color:var(--canopy-deep);
+    padding:8px 4px;
+    border-bottom:1px solid transparent;
+    transition:border-color .15s ease;
+  }
+  .nav-arrows button:hover{border-color:var(--canopy-deep);}
+  .nav-arrows button:disabled{opacity:0.25; cursor:default;}
+  .nav-arrows button:disabled:hover{border-color:transparent;}
+
+  @media (max-width:820px){
+    .app{flex-direction:column;}
+    .sidebar{
+      width:100%;
+      height:auto;
+      position:relative;
+      padding:22px 18px;
+    }
+    .weeknav{display:flex; overflow-x:auto; gap:4px;}
+    .weeknav::before{display:none;}
+    .weeknav li{flex-shrink:0;}
+    .weeknav button{padding:8px 12px;}
+    .main{padding:32px 22px 80px 22px;}
+    h2.week-title{font-size:1.8rem;}
+  }
+</style>
+</head>
+<body>
+<div class="app">
+
+  <nav class="sidebar">
+    <div class="brand">
+      <div class="bands">
+        <span style="background:var(--band-blue)"></span>
+        <span style="background:var(--band-green)"></span>
+        <span style="background:var(--band-red)"></span>
+        <span style="background:var(--band-nir)"></span>
+        <span style="background:var(--band-swir)"></span>
+      </div>
+      <h1>Forest Loss Detection</h1>
+      <p>Study notes — 6 week build</p>
+    </div>
+
+    <ul class="weeknav" id="weeknav"></ul>
+
+    <div class="sidebar-footer">
+      Sentinel-2 · Google Earth Engine<br>
+      Random Forest · U-Net · Streamlit
+    </div>
+  </nav>
+
+  <main class="main">
+    <div class="content" id="content"></div>
+  </main>
+
+</div>
+
+<script>
+const weeks = [
+  {
+    wk: "Week 1",
+    title: "Data acquisition & problem framing",
+    sub: "The foundational vocabulary: what a satellite actually measures, and why one formula (NDVI) does most of the work.",
+    html: `
+      <section class="block">
+        <h3>Remote sensing, in one sentence</h3>
+        <p>A satellite is a camera in orbit. Remote sensing just means "measuring something without touching it" — in this project, that's photographing land from space on a regular schedule.</p>
+      </section>
+
+      <section class="block">
+        <h3>Sentinel-2</h3>
+        <p>A pair of European satellites that photograph the entire Earth roughly every 5 days, free to use, at <strong>10m resolution</strong> — each pixel covers a 10m × 10m patch of ground, about the size of a badminton court. Small enough to spot a plantation road, too coarse to spot a single tree.</p>
+      </section>
+
+      <section class="block">
+        <h3>Bands — the key idea</h3>
+        <p>Human eyes see three channels: red, green, blue. Sentinel-2 sees <strong>13 bands</strong>, most invisible to us — including near-infrared (NIR) and shortwave infrared (SWIR).</p>
+        <div class="callout">
+          <span class="tag">Why it matters</span>
+          Healthy plants reflect a lot of near-infrared light. Bare soil, water, and dead vegetation don't. This invisible-to-us fact is the entire foundation of vegetation remote sensing — it lets us tell "forest" from "cleared land" mathematically.
+        </div>
+      </section>
+
+      <section class="block">
+        <h3>NDVI — the one formula to memorize</h3>
+        <div class="formula">NDVI = (NIR − Red) / (NIR + Red)</div>
+        <ul class="plain">
+          <li>Healthy dense forest → NDVI close to <strong>+1</strong></li>
+          <li>Bare soil / roads / cleared land → NDVI close to <strong>0</strong></li>
+          <li>Water → NDVI often <strong>negative</strong></li>
+        </ul>
+        <p>Comparing NDVI for the same patch of land across two years (e.g. 2017 vs. 2024) — a sharp drop signals: this used to be forest, now it isn't.</p>
+      </section>
+
+      <section class="block">
+        <h3>Glossary — Week 1</h3>
+        <div class="glossary">
+          <div class="term"><span class="t">Google Earth Engine (GEE)</span><span class="d">Free cloud platform for satellite data. You write code that runs on Google's servers and returns only the processed result you asked for — no need to download raw planet-scale imagery.</span></div>
+          <div class="term"><span class="t">AOI (Area of Interest)</span><span class="d">The geographic boundary of the study region — a bounding box (four coordinates) or a shapefile (a file format for geographic boundaries).</span></div>
+          <div class="term"><span class="t">Cloud masking</span><span class="d">Automatically detecting and discarding cloudy pixels, since optical satellites can't see through cloud. Sentinel-2 includes a built-in cloud-probability band for this.</span></div>
+          <div class="term"><span class="t">Ground truth / labels</span><span class="d">An independent, trusted dataset used as the "answer key." We use the Hansen Global Forest Change dataset (University of Maryland) — a validated global map of year-by-year forest loss.</span></div>
+        </div>
+      </section>
+    `
+  },
+  {
+    wk: "Week 2",
+    title: "Preprocessing",
+    sub: "Turning raw imagery into a clean, structured dataset — the step that quietly determines whether the model works at all.",
+    html: `
+      <section class="block">
+        <h3>What preprocessing means here</h3>
+        <p>Raw satellite data isn't ready to feed a model — like raw groceries before cooking. This week is the chopping and prepping stage: cleaning, standardizing, reorganizing into a consistent shape.</p>
+      </section>
+
+      <section class="block">
+        <h3>Applying the cloud mask</h3>
+        <p>In practice, instead of relying on one snapshot, we take the <strong>median</strong> pixel value across many images from the same time period. If a pixel is cloudy in one image but clear in three others, the median naturally favors the clear readings — similar to averaging out noise across several photos.</p>
+      </section>
+
+      <section class="block">
+        <h3>EVI — NDVI's more refined cousin</h3>
+        <div class="formula">EVI = 2.5 × (NIR − Red) / (NIR + 6×Red − 7.5×Blue + 1)</div>
+        <p>Don't memorize the constants — they're empirically calibrated, not derived. What matters: EVI corrects two NDVI weaknesses — it doesn't "saturate" over very dense forest, and it's less thrown off by haze or soil brightness beneath sparse canopy. In dense tropical forest (our case), EVI tends to behave better than NDVI alone.</p>
+      </section>
+
+      <section class="block">
+        <h3>Tiling into patches</h3>
+        <p>A 50km × 50km AOI at 10m resolution is a 5000×5000 pixel image — too large and the wrong shape for most models, which expect fixed-size inputs (e.g. always 256×256). "Tiling" chops the big image into a grid of equal squares, the way a sheet cake is cut into equal servings. Each patch becomes one training example.</p>
+      </section>
+
+      <section class="block">
+        <h3>Aligning imagery with Hansen labels</h3>
+        <div class="callout">
+          <span class="tag">Common invisible bug</span>
+          Sentinel-2 imagery and Hansen labels come from different sources, potentially on slightly different pixel grids or map projections. "Alignment" (reprojection) mathematically resamples both onto the exact same grid so pixel (100,100) truly means the same patch of ground in both datasets. Get this wrong and the model trains on mislabeled data — with no error message telling you why it's underperforming.
+        </div>
+      </section>
+
+      <section class="block">
+        <h3>End of week 2</h3>
+        <p>Cleaned, cloud-free imagery → NDVI + EVI computed → chopped into uniform patches → each patch correctly aligned with its Hansen label. That's the full training dataset, ready for Week 3.</p>
+      </section>
+    `
+  },
+  {
+    wk: "Week 3",
+    title: "Baseline model",
+    sub: "Where ML actually enters — building a Random Forest, and learning why accuracy alone will lie to you.",
+    html: `
+      <section class="block">
+        <h3>What "training a model" means</h3>
+        <p>A model is a function: inputs (NDVI, EVI, band values) → prediction (forest / not-forest). "Training" means showing it thousands of examples with known answers, letting an algorithm adjust itself to predict them better. It's automated pattern-matching, not fundamentally different from a person noticing "low NDVI + low EVI usually means cleared land" — except applied across more variables than a human could juggle.</p>
+      </section>
+
+      <section class="block">
+        <h3>Why start with Random Forest</h3>
+        <p>A <strong>decision tree</strong> is a flowchart of yes/no questions ("Is NDVI > 0.5? → Is EVI > 0.4? → predict forest"), learned automatically from data. One tree tends to <strong>overfit</strong> — memorizing quirks of the training data rather than learning general patterns. A <strong>Random Forest</strong> builds hundreds of slightly different trees and has them vote — far more robust, fast, interpretable, hard to mess up. Good baseline material.</p>
+        <div class="callout">
+          <span class="tag">XGBoost, briefly</span>
+          A cousin of Random Forest: instead of building trees independently, it builds them sequentially, each new tree correcting the previous ones' mistakes. Usually a bit more accurate, a bit more finicky. Worth trying both and comparing.
+        </div>
+      </section>
+
+      <section class="block">
+        <h3>Train / test split — non-negotiable</h3>
+        <p>Never evaluate on the data the model learned from (like grading a student on memorized answers). Split patches into a <strong>training set</strong> (~70–80%, what the model learns from) and a held-out <strong>test set</strong> (~20–30%, never seen during training). Great training performance + poor test performance = <strong>overfitting</strong>.</p>
+      </section>
+
+      <section class="block">
+        <h3>Why accuracy alone misleads — class imbalance</h3>
+        <p>If 95% of patches are "still forest" and 5% are "newly deforested," a model that always predicts "forest" scores 95% accuracy while being completely useless. This is why precision, recall, and kappa exist.</p>
+      </section>
+
+      <section class="block">
+        <h3>Precision & recall — worked example</h3>
+        <p>Test set of 100 patches. Ground truth: 20 actually deforested, 80 actually forest. Model predicts 25 as deforested, 75 as forest.</p>
+        <table class="matrix">
+          <tr><th></th><th>Model: "deforested"</th><th>Model: "forest"</th></tr>
+          <tr><th>Actually deforested</th><td class="hit">15 (true positive)</td><td class="miss">5 (false negative)</td></tr>
+          <tr><th>Actually forest</th><td class="miss">10 (false positive)</td><td class="hit">70 (true negative)</td></tr>
+        </table>
+        <div class="formula">Precision = 15 / 25 = 60%   ← "when the model alarms, how often is it right?"
+Recall    = 15 / 20 = 75%   ← "of everything really deforested, how much was caught?"</div>
+        <div class="callout">
+          <span class="tag">The tradeoff</span>
+          Flag everything as "deforested" → recall = 100%, precision collapses. Only flag when extremely confident → precision can hit 100%, recall collapses. The real skill is choosing the right balance. For deforestation monitoring, missing real loss (low recall) is usually worse than a false alarm — worth tuning toward recall and stating that choice explicitly.
+        </div>
+      </section>
+
+      <section class="block">
+        <h3>Kappa coefficient</h3>
+        <p>A stricter accuracy measure that corrects for the chance a model could get some predictions right just by luck, given class imbalance. A model can look decent on raw accuracy but mediocre on kappa — kappa is the number a careful reviewer trusts.</p>
+      </section>
+    `
+  },
+  {
+    wk: "Week 4",
+    title: "Deep learning approach",
+    sub: "CNNs and U-Net: giving the model spatial awareness that Random Forest doesn't have.",
+    html: `
+      <section class="block">
+        <h3>The limitation this week fixes</h3>
+        <p>Random Forest looks at each pixel/patch independently — no concept of what surrounds it. But real land cover has spatial structure: cleared patches cluster, plantations form blocky geometric grids, natural forest edges look irregular. A model that can "see" neighborhoods, not just isolated pixel values, has more to work with.</p>
+      </section>
+
+      <section class="block">
+        <h3>What a convolution actually is</h3>
+        <p>NDVI already combines nearby numbers (NIR, Red) into one meaningful output. A <strong>convolution</strong> generalizes this: a small sliding window (e.g. 3×3 pixels) scans across the image; at each position it multiplies its 9 weights by the 9 pixels underneath and sums them — weighted averaging over a neighborhood.</p>
+        <div class="callout">
+          <span class="tag">The key trick</span>
+          Unlike NDVI's fixed formula, the weights inside that 3×3 window are <strong>learned from data</strong> — the same way Random Forest learns which yes/no questions matter. Early layers tend to learn simple things (edges, color transitions); deeper layers combine those into complex patterns (row structure, canopy texture) — never hand-designed.
+        </div>
+      </section>
+
+      <section class="block">
+        <h3>Why this suits the problem</h3>
+        <p>Random Forest treats every pixel as an unrelated question. A CNN's filters only ever look at neighborhoods, so spatial awareness is built into the architecture itself — not bolted on as an engineered feature.</p>
+      </section>
+
+      <section class="block">
+        <h3>U-Net — for pixel-by-pixel maps</h3>
+        <p>Plain CNNs are often built for classification ("does this image contain X, yes/no"). We need <strong>segmentation</strong> — a yes/no for every single pixel, producing a full map.</p>
+        <ul class="plain">
+          <li><strong>Encoder ("down" half):</strong> repeatedly shrinks the image while extracting increasingly abstract features — zooming out while making smarter summaries.</li>
+          <li><strong>Decoder ("up" half):</strong> expands back to original resolution, reconstructing a full-size, per-pixel output map.</li>
+          <li><strong>Skip connections:</strong> pipe fine detail from early "down" layers directly across to matching "up" layers, so spatial detail isn't lost — like keeping rough-draft notes visible while writing the final version.</li>
+        </ul>
+      </section>
+
+      <section class="block">
+        <h3>Training mechanics</h3>
+        <p>Each full pass over the data is an <strong>epoch</strong>; a <strong>loss function</strong> measures how wrong predictions are, and training nudges the model's weights to shrink that number. This is computationally heavy, hence the benefit of a <strong>GPU</strong> — Google Colab provides free (if limited) GPU access, enough at this project's scale.</p>
+      </section>
+
+      <section class="block">
+        <h3>The point of this week</h3>
+        <p>Evaluate with the same metrics as Week 3 — confusion matrix, precision, recall, kappa — on the same held-out test set, and compare directly against the Random Forest baseline. If U-Net wins meaningfully, that's the headline result. If it barely edges out or loses, that's also a legitimate, mature conclusion: added complexity gave diminishing returns at this data scale.</p>
+      </section>
+    `
+  },
+  {
+    wk: "Week 5",
+    title: "Visualization",
+    sub: "Turning numbers into something a human can understand in seconds — the highest-leverage week for the portfolio.",
+    html: `
+      <section class="block">
+        <h3>Why this week matters most</h3>
+        <p>After Weeks 3–4, results are numbers in a table. That proves rigor to a technical reader, but communicates nothing at a glance. A map showing red patches spreading across a district between 2017 and 2024 tells the story instantly — no code-reading required.</p>
+      </section>
+
+      <section class="block">
+        <h3>Streamlit</h3>
+        <p>Normally, an interactive web app requires HTML, CSS, JavaScript, and a backend framework. <strong>Streamlit</strong> sidesteps this — write a normal Python script, call functions like <code>st.selectbox(...)</code> or <code>st.map(...)</code>, and it becomes a working web page. No web development skill-building required.</p>
+      </section>
+
+      <section class="block">
+        <h3>folium & leafmap</h3>
+        <p><strong>folium</strong> generates interactive, pannable/zoomable maps (built on the Leaflet JS library, no need to touch it directly). <strong>leafmap</strong> sits on top of folium, purpose-built for geospatial work — makes it easy to drop GEE outputs and classified maps onto an interactive map in a few lines.</p>
+      </section>
+
+      <section class="block">
+        <h3>What the app should let someone do</h3>
+        <ul class="plain">
+          <li>See a map of the AOI</li>
+          <li>See two time points (e.g. 2017 vs. 2024)</li>
+          <li>See detected forest loss highlighted on the satellite basemap</li>
+          <li>(Optional) click a region for details — estimated hectares lost, model confidence</li>
+        </ul>
+        <p>A simple before/after slider that works reliably beats an ambitious feature set that's half-broken.</p>
+      </section>
+
+      <section class="block">
+        <h3>Raster vs. vector</h3>
+        <p>Satellite imagery and model predictions are <strong>raster</strong> data — a grid of pixels, like a photograph. AOI boundaries or plantation outlines are typically <strong>vector</strong> data — shapes defined by coordinates (e.g. a shapefile). The app will likely layer both: raster imagery/predictions as a colored layer, with a vector boundary line on top.</p>
+      </section>
+
+      <section class="block">
+        <h3>Streamlit Community Cloud</h3>
+        <p>Free hosting: push code to a public GitHub repo, connect it to Streamlit's platform, get a public URL anyone can open — no installation required. This is the difference between "I built something" and "here, try it yourself."</p>
+        <div class="callout">
+          <span class="tag">Plan ahead</span>
+          Pre-compute and save results as lightweight files during Weeks 3–4, rather than re-running GEE queries or model inference live on every app load — hosting has resource limits.
+        </div>
+      </section>
+    `
+  },
+  {
+    wk: "Week 6",
+    title: "Polish & publish",
+    sub: "The shortest week technically, but the one that determines whether any of the previous work gets seen.",
+    html: `
+      <section class="block">
+        <h3>Why the README matters most</h3>
+        <p>A recruiter clicks the repo link with maybe 30–90 seconds before deciding whether to look closer. The README is the entire first impression. Structure that lets someone skim fast:</p>
+        <ul class="plain">
+          <li><strong>Problem</strong> — one or two sentences</li>
+          <li><strong>Data sources</strong> — Sentinel-2, Hansen Global Forest Change, AOI</li>
+          <li><strong>Method</strong> — short paragraph: preprocessing → Random Forest baseline → U-Net comparison</li>
+          <li><strong>Results</strong> — actual numbers (precision, recall, kappa for both models), a map screenshot</li>
+          <li><strong>Limitations</strong> — stated honestly, not skipped</li>
+          <li><strong>How to run it</strong> — brief setup instructions</li>
+        </ul>
+      </section>
+
+      <section class="block">
+        <h3>Why stating limitations is a real skill</h3>
+        <p>A model claiming 99% accuracy on an imbalanced dataset without mentioning class imbalance is a red flag to anyone who knows what to look for — it signals a lack of understanding of the results, not confidence. Stating limitations clearly (10m resolution can't catch small-scale clearing, possible label misalignment, this replicates known methods rather than inventing new ones) demonstrates the opposite: full understanding of what the numbers do and don't prove.</p>
+      </section>
+
+      <section class="block">
+        <h3>Deploying, mechanically</h3>
+        <p>Push code to a public GitHub repo → connect the repo to Streamlit Community Cloud → it builds and hosts automatically. The main snag: a <code>requirements.txt</code> file listing exact dependencies (streamlit, folium, leafmap, numpy, etc.) so the server can install them. Test this step early, not at the very end.</p>
+      </section>
+
+      <section class="block">
+        <h3>The blog post</h3>
+        <p>Not about proving good writing — it's a second, more explorable entry point for people who won't read code but will read 800 words on the thinking behind it. A structure that works: motivation → what was built → what was found → what would be done differently next time. That last part signals ongoing curiosity, not "finished and stopped thinking about it."</p>
+      </section>
+
+      <section class="block">
+        <h3>Sharing it</h3>
+        <p>A repo that's never shared gets essentially zero organic visibility. A short LinkedIn post — a map screenshot, a link to the live app, relevant tags (machine learning, remote sensing, Malaysia) — is often literally how student projects get noticed, more so than cold applications.</p>
+      </section>
+
+      <section class="block">
+        <h3>End state — what should exist by now</h3>
+        <ul class="plain">
+          <li>Public GitHub repo, clean code, honest README</li>
+          <li>A working, clickable Streamlit demo</li>
+          <li>A blog post explaining the methodology</li>
+          <li>A defensible evaluation against a real benchmark (Hansen)</li>
+        </ul>
+      </section>
+    `
+  }
+];
+
+let current = 0;
+const nav = document.getElementById('weeknav');
+const content = document.getElementById('content');
+
+function renderNav(){
+  nav.innerHTML = weeks.map((w,i) => `
+    <li>
+      <button data-i="${i}" class="${i===current?'active':''}">
+        <span class="dot">${i+1}</span>
+        <span class="label">
+          <span class="wk">${w.wk}</span>
+          <span class="ti">${w.title}</span>
+        </span>
+      </button>
+    </li>
+  `).join('');
+  nav.querySelectorAll('button').forEach(btn=>{
+    btn.addEventListener('click', ()=>{
+      current = parseInt(btn.dataset.i);
+      render();
+      window.scrollTo({top:0, behavior:'smooth'});
+    });
+  });
+}
+
+function render(){
+  const w = weeks[current];
+  content.innerHTML = `
+    <div class="eyebrow">${w.wk} of ${weeks.length}</div>
+    <h2 class="week-title">${w.title}</h2>
+    <p class="week-sub">${w.sub}</p>
+    ${w.html}
+    <div class="nav-arrows">
+      <button id="prevBtn" ${current===0?'disabled':''}>&larr; Previous week</button>
+      <button id="nextBtn" ${current===weeks.length-1?'disabled':''}>Next week &rarr;</button>
+    </div>
+  `;
+  renderNav();
+  document.getElementById('prevBtn').addEventListener('click', ()=>{
+    if(current>0){ current--; render(); window.scrollTo({top:0, behavior:'smooth'}); }
+  });
+  document.getElementById('nextBtn').addEventListener('click', ()=>{
+    if(current<weeks.length-1){ current++; render(); window.scrollTo({top:0, behavior:'smooth'}); }
+  });
+}
+
+render();
+</script>
+</body>
+</html>
